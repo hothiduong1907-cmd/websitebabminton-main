@@ -1,0 +1,266 @@
+<?php
+/**
+ * Helper Functions
+ * Utility functions for the application
+ */
+
+/**
+ * Generate slug from string
+ */
+function slug($string) {
+    $string = preg_replace('/[hihi]/u', 'a', $string);
+    $string = preg_replace('/[hihi]/u', 'e', $string);
+    $string = preg_replace('/[hihi]/u', 'i', $string);
+    $string = preg_replace('/[hihi]/u', 'o', $string);
+    $string = preg_replace('/[hihi]/u', 'u', $string);
+    $string = preg_replace('/[hihi]/u', 'y', $string);
+    $string = preg_replace('/đ/u', 'd', $string);
+    $string = strtolower($string);
+    $string = preg_replace('/[^a-z0-9\s-]/u', '', $string);
+    $string = preg_replace('/[\s-]+/u', '-', $string);
+    $string = trim($string, '-');
+    return $string;
+}
+
+/**
+ * Format price
+ */
+function formatPrice($price) {
+    return number_format($price, 0, ',', '.') . ' đ';
+}
+
+/**
+ * Get status badge class
+ */
+function getStatusBadge($status) {
+    $classes = [
+        'active' => 'success',
+        'inactive' => 'secondary',
+        'pending' => 'warning',
+        'processing' => 'info',
+        'shipped' => 'primary',
+        'completed' => 'success',
+        'cancelled' => 'danger',
+        'paid' => 'success',
+        'failed' => 'danger'
+    ];
+    return $classes[$status] ?? 'secondary';
+}
+
+/**
+ * Get status text
+ */
+function getStatusText($status) {
+    $texts = [
+        'active' => 'Hoạt động',
+        'inactive' => 'Ẩn',
+        'pending' => 'Chờ xử lý',
+        'processing' => 'Đang xử lý',
+        'shipped' => 'Đang giao',
+        'completed' => 'Hoàn thành',
+        'cancelled' => 'Đã hủy',
+        'paid' => 'Đã thanh toán',
+        'failed' => 'Thất bại'
+    ];
+    return $texts[$status] ?? $status;
+}
+
+/**
+ * Upload image
+ */
+function uploadImage($file, $destination, $maxSize = 2097152, $allowedTypes = ['image/jpeg', 'image/png', 'image/jpg']) {
+    if (!isset($file['error']) || is_array($file['error'])) {
+        return ['success' => false, 'message' => 'Lỗi tải file'];
+    }
+
+    if ($file['size'] > $maxSize) {
+        return ['success' => false, 'message' => 'Kích thước file quá lớn (max 2MB)'];
+    }
+
+    if (!in_array($file['type'], $allowedTypes)) {
+        return ['success' => false, 'message' => 'Chỉ chấp nhận file JPG, PNG'];
+    }
+
+    $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+    $filename = uniqid() . '.' . $extension;
+    $targetPath = $destination . $filename;
+
+    if (!is_dir($destination)) {
+        mkdir($destination, 0755, true);
+    }
+
+    if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+        return ['success' => true, 'filename' => $filename];
+    }
+
+    return ['success' => false, 'message' => 'Lỗi khi tải file'];
+}
+
+/**
+ * Delete image
+ */
+function deleteImage($path) {
+    if (file_exists($path)) {
+        return unlink($path);
+    }
+    return false;
+}
+
+/**
+ * Generate random string
+ */
+function generateRandomString($length = 10) {
+    return substr(str_shuffle('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'), 0, $length);
+}
+
+/**
+ * Generate order number
+ */
+function generateOrderNumber() {
+    return 'ORD-' . date('ym') . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Sanitize input
+ */
+function sanitize($data) {
+    if (is_array($data)) {
+        foreach ($data as $key => $value) {
+            $data[$key] = sanitize($value);
+        }
+        return $data;
+    }
+    return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
+}
+
+/**
+ * Flash message helper
+ */
+function flash($key, $value = null) {
+    if ($value === null) {
+        if (isset($_SESSION['flash'][$key])) {
+            $message = $_SESSION['flash'][$key];
+            unset($_SESSION['flash'][$key]);
+            return $message;
+        }
+        return null;
+    }
+    $_SESSION['flash'][$key] = $value;
+}
+
+/**
+ * Check if current user is admin
+ */
+function isAdmin() {
+    return isset($_SESSION['user']) && $_SESSION['user']['role'] === 'admin';
+}
+
+/**
+ * Get current user
+ */
+function currentUser() {
+    return $_SESSION['user'] ?? null;
+}
+
+/**
+ * Cart Helpers
+ */
+
+/**
+ * Get cart items from session
+ */
+function getCart() {
+    return $_SESSION['cart'] ?? [];
+}
+
+/**
+ * Get cart item count
+ */
+function cartItemCount() {
+    $cart = getCart();
+    return array_sum(array_column($cart, 'quantity'));
+}
+
+/**
+ * Add item to cart
+ */
+function addToCart($productId, $quantity = 1, $productData = []) {
+    $cart = getCart();
+    
+    if (isset($cart[$productId])) {
+        $cart[$productId]['quantity'] += $quantity;
+        // nếu lưu trữ thêm dữ liệu mới (slug/image) thì cập nhật vào cart hiện tại
+        if (!empty($productData['slug'])) {
+            $cart[$productId]['slug'] = $productData['slug'];
+        }
+        if (!empty($productData['image'])) {
+            $cart[$productId]['image'] = $productData['image'];
+        }
+        if (isset($productData['sale_price'])) {
+            $cart[$productId]['sale_price'] = $productData['sale_price'];
+        }
+        if (isset($productData['price'])) {
+            $cart[$productId]['price'] = $productData['price'];
+        }
+    } else {
+        $cart[$productId] = [
+            'id' => $productId,
+            'name' => $productData['name'] ?? '',
+            'price' => $productData['price'] ?? 0,
+            'sale_price' => $productData['sale_price'] ?? null,
+            'image' => $productData['image'] ?? '',
+            'quantity' => $quantity
+        ];
+    }
+    
+    $_SESSION['cart'] = $cart;
+    return $cart[$productId];
+}
+
+/**
+ * Update cart item quantity
+ */
+function updateCartItem($productId, $quantity) {
+    $cart = getCart();
+    
+    if ($quantity <= 0) {
+        unset($cart[$productId]);
+    } else {
+        $cart[$productId]['quantity'] = (int)$quantity;
+    }
+    
+    $_SESSION['cart'] = $cart;
+}
+
+/**
+ * Remove item from cart
+ */
+function removeFromCart($productId) {
+    $cart = getCart();
+    unset($cart[$productId]);
+    $_SESSION['cart'] = $cart;
+}
+
+/**
+ * Clear entire cart
+ */
+function clearCart() {
+    unset($_SESSION['cart']);
+}
+
+/**
+ * Get cart total price
+ */
+function cartTotal() {
+    $cart = getCart();
+    $total = 0;
+    
+    foreach ($cart as $item) {
+        $price = $item['sale_price'] ?? $item['price'];
+        $total += $price * $item['quantity'];
+    }
+    
+    return $total;
+}
+
+
